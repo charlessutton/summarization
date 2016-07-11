@@ -3,6 +3,8 @@
 Created on Fri Jul  8 17:36:27 2016
 
 @author: Code
+
+This script illusatrate how to use the parser
 """
 #Imports
 import wikipedia

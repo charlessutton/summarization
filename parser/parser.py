@@ -69,7 +69,25 @@ def page_to_dict(page):
         query_summary[query] = summary        
         
     return query_summary
+
+def post_process(query_summary, delete_references = True, delete_ext_links = True):
+    """ 
+    INPUT : the dict query_summary dictionnary built by page_to_dict
+    OUTPUT : the dict where we removed empty values, references and other subsections ...
+    """
     
+    # remove empty    
+    for key in query_summary.keys():
+        if not query_summary[key] :
+            del query_summary[key]
+            
+    # remove references 
+        #to complete
+    
+    # remove external links
+        
+    # remove other unuseful subsection
+    return query_summary
 
 def page_to_json(page, folder_path):
     """ 
@@ -81,6 +99,7 @@ def page_to_json(page, folder_path):
     """
     name = page.title
     query_summary = page_to_dict(page)
+    query_summary = post_process(query_summary)
     with open(folder_path+name+'.json', 'w') as fp:
         json.dump(query_summary, fp)
     
