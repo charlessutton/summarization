@@ -29,21 +29,23 @@ import time
 
 
 # paths to folder 
-data_json = "/home/ubuntu/summarization_query_oriented/data/json/patch_0/"
-data_txt = "/home/ubuntu/summarization_query_oriented/data/txt/"
-model_folder = "/home/ubuntu/summarization_query_oriented/models/"
-nn_models_folder = "/home/ubuntu/summarization_query_oriented/nn_models/"
-title_file = "/home/ubuntu/summarization_query_oriented/DUC/duc2005_topics.sgml"
-titles_folder = "/home/ubuntu/summarization_query_oriented/DUC/duc2005_docs/"
-
+data_json = "/home/ubuntu/summarization_query_oriented/data/wikipedia/json/patch_0/"
+data_txt = "/home/ubuntu/summarization_query_oriented/data/wikipedia/txt/"
+lang_model_folder = "/home/ubuntu/summarization_query_oriented/nn_models/language_models/d2v/"
+nn_summarizers_folder = "/home/ubuntu/summarization_query_oriented/nn_models/nn_summarizer/"
+title_file = "/home/ubuntu/summarization_query_oriented/data/DUC/duc2005_topics.sgml"
+titles_folder = "/home/ubuntu/summarization_query_oriented/data/DUC/duc2005_docs/"
+model_dir = "/home/ubuntu/summarization_query_oriented/data/DUC/duc2005_summary_model"
+valset_dir = "/home/ubuntu/summarization_query_oriented/data/validation_set/"
+summary_system_super_folder = "/home/ubuntu/summarization_query_oriented/data/DUC/duc2005_summary_system/"
 # training parameters
 
 patience_limit = 10
 
 # validation data 
 
-X_val = np.load("/home/ubuntu/summarization_query_oriented/valset/X_val.npy")
-y_val = np.load("/home/ubuntu/summarization_query_oriented/valset/y_val.npy")
+X_val = np.load(valset_dir + "X_val.npy")
+y_val = np.load(valset_dir + "y_val.npy")
 
 
 # useful functions to put in a separate file next
@@ -378,7 +380,10 @@ d2v_model = gensim.models.doc2vec.Doc2Vec(dm=dm,min_count=min_count, window=wind
 
 # load model
 model_name ="dm_"+str(dm)+"_mc_"+str(min_count)+"_w_"+str(window)+"_size_"+str(size)+"_neg_"+str(negative)+"_ep_"+str(epoch)
-d2v_model = d2v_model.load(model_folder+model_name+".d2v")
+try :
+    d2v_model = d2v_model.load(lang_model_folder+model_name+".d2v")
+except :
+    print "try a model in : ", os.listdir(lang_model_folder)
 print("model loaded")
 
 
@@ -391,7 +396,7 @@ docs_title_dict = doc_title_table(title_file)
 
 ## design a fully connected model
 
-fc_model_name = nn_models_folder + time.strftime("%Y_%m_%d_") +'_fc_model.h5' # replace it with hour of training
+fc_model_name = nn_summarizers_folder + time.strftime("%Y_%m_%d_") +'_fc_model.h5' # replace it with hour of training
 
 fc_model = Sequential()
 
@@ -417,7 +422,7 @@ valLoss_min = 1
 batch_counter = 0
 while patience < patience_limit :
     # train on 1000 batchs
-    for i in range(1000):
+    for i in range(10000):
         
         triplets, labels = create_triplets(d2v_model, article_names, article_weights, nb_triplets=batch_size, triplets_per_file=16, neg_ratio=1, str_mode = False)
         fc_model.train_on_batch(triplets, labels)
@@ -435,10 +440,11 @@ while patience < patience_limit :
         patience = 0
         #save this new model
         fc_model_name = "fc_model_batch_"+str(batch_counter)+"k_valLoss_"+str(valLoss)
-        fc_model.save(nn_models_folder + fc_model_name+ ".h5")  # creates a HDF5 file 'my_model.h5'
+        fc_model.save(nn_models_folder + fc_model_name+ ".hdf5")  # creates a HDF5 file 'my_model.h5'
 
         # summarize DUC
-        system_folder = "/home/ubuntu/summarization_query_oriented/DUC/duc2005_summary_system/"+fc_model_name+"/"
+        
+        system_folder = summary_system_super_folder+fc_model_name+"/"
         os.mkdir(system_folder)
         for docs_key in docs_title_dict.keys():
 
@@ -457,7 +463,7 @@ while patience < patience_limit :
         # perform rouge
         r = Rouge155()
         r.system_dir = system_folder
-        r.model_dir = '/home/ubuntu/summarization_query_oriented/DUC/duc2005_summary_model'
+        r.model_dir = model_dir 
         r.system_filename_pattern = 'd(\d+)[a-z]'
         r.model_filename_pattern = 'D#ID#.M.250.[A-Z].[A-Z]'
 
@@ -475,7 +481,7 @@ while patience < patience_limit :
         
     else :
         patience = patience + 1
-        print patience
+        print "patience :", patience
     
     
 print('early stopped')
