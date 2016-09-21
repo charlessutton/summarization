@@ -277,7 +277,7 @@ def doc_title_table(title_file):
     return docs_title_dict
 
 def merge_articles(docs_folder):
-
+""" for DUC corpus """ 
     s = ""
     
     for doc in os.listdir(docs_folder):
