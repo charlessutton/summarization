@@ -277,7 +277,7 @@ def doc_title_table(title_file):
     return docs_title_dict
 
 def merge_articles(docs_folder):
-""" for DUC corpus """ 
+    """ for DUC corpus """ 
     s = ""
     
     for doc in os.listdir(docs_folder):
@@ -453,7 +453,8 @@ while patience < patience_limit :
     r.system_filename_pattern = 'd(\d+)[a-z]'
     r.model_filename_pattern = 'D#ID#.M.250.[A-Z].[A-Z]'
         
-    options =  '-a -d -e ' + r._data_dir + ' -m -n 2 -s -2 4 -u -x -f B'
+    #options =  '-a -d -e ' + r._data_dir + ' -m -n 2 -s -2 4 -u -x -f B'
+    options = "-e " + r._data_dir + " -n 4 -2 4 -u -c 95 -r 1000 -f A -p 0.5 -t 0 -a -x"
 
     output = r.convert_and_evaluate(rouge_args=options)
     output_dict = r.output_to_dict(output)
