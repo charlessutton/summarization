@@ -1,6 +1,6 @@
 # hard coded path to directories 
 
-data_json_dir = "/home/ubuntu/summarization_query_oriented/data/wikipedia/json/patch_0/"
+data_json_dir = "/home/ubuntu/summarization_query_oriented/data/wikipedia/json/td_qfs_rank_1/"
 data_txt_dir = "/home/ubuntu/summarization_query_oriented/data/wikipedia/txt/"
 lang_model_dir = "/home/ubuntu/summarization_query_oriented/nn_models/language_models/d2v/"
 model_dir = "/home/ubuntu/summarization_query_oriented/data/DUC/duc2005_summary_model"
