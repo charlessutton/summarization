@@ -63,7 +63,7 @@ checkpointer = ModelCheckpoint(filepath=model_folder+model_name, verbose=1, save
 earlystopper = EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,patience=3, min_lr=0.001)
 
-model.fit_generator(train_gen, samples_per_epoch = 2*(train_data_size-seqlen), nb_epoch = 1000, verbose = 1)
+model.fit_generator(train_gen, samples_per_epoch = 2*(train_data_size-seq_length), nb_epoch = 1000, verbose = 1, nb_worker=1)
 compteur = 0
 # training command
 while compteur < 2*train_data_size:
