@@ -530,3 +530,248 @@ def remove_stopwords(sentence_prep, stopwords):
         else : 
             sentence_wo_sw.append(word)
     return sentence_wo_sw
+
+def remove_unknown_words(txt_prep, word_indices):
+    txt_wo_uw = []
+    for word in txt_prep:
+        if word in word_indices.keys():
+            txt_wo_uw.append(word)
+    return txt_wo_uw
+
+def lstm_infer_vector(lstm_model, txt, stopwords,word_indices, maxlen=10, taillemax=300) :
+    """
+    d2v.infer_vector equivalent for a lstm language model
+    """
+    
+    txt_prep = gensim.utils.simple_preprocess(txt, deacc=True)
+    txt_wo_uw = remove_unknown_words(txt_prep, word_indices)
+    txt_wo_ws = remove_stopwords(txt_wo_uw, stopwords)
+    
+    if len(txt_wo_ws)>taillemax:
+        sentence = txt_wo_ws[-taillemax:]
+    
+    if len(txt_wo_ws)<maxlen :
+        #cas du texte trop court
+        sentence = txt_wo_ws
+        X = np.zeros((1, maxlen, len(word_indices)), dtype=np.bool)
+        y = np.zeros((1, len(word_indices)), dtype=np.bool)
+        for t, word in enumerate(sentence):
+            X[0, t, word_indices[word]] = 1
+        preds = lstm_model.predict(X, verbose=0)[0]
+    else :
+        
+        for current_part in range(len(txt_wo_ws)/maxlen):
+            sentence = txt_wo_ws[current_part*maxlen:(current_part+1)*maxlen]
+            X = np.zeros((1, maxlen, len(word_indices)), dtype=np.bool)
+            y = np.zeros((1, len(word_indices)), dtype=np.bool)
+            for t, word in enumerate(sentence):
+                X[0, t, word_indices[word]] = 1
+            preds = lstm_model.predict(X, verbose=0)[0]
+            
+
+    return preds
+
+def create_triplets_lstm(lstm_model, article_names, article_weights,stopwords,word_indices, nb_triplets=20, triplets_per_file=5, neg_ratio=0.5, str_mode = False, with_txt_vect = False) :
+    """
+    inputs :    
+        - lstm_model : lstm language model 
+        - article_names : ndarray containing the names of the json files (absolute path !)
+        - article_weights: ndarray normalized of the weight of each files 
+        - nb_triplets : nb of triplets to generate
+        - triplets_per_file : number of triplet built for each selected file
+        - neg_ratio : ratio of positives / negative examples. Negative examples are taken inside the article !
+        
+    output : 
+        - triplets : nd_array of triplets of shape (nb_triplets+ , embed_dim)
+        - labels : nd_array of labels of shape (nb_triplets+ ,)
+
+    """
+    triplets = []
+    labels = []
+    
+    assert nb_triplets>=triplets_per_file, "you should have nb_triplets > triplets_per_file"
+    
+    # nb of pos / neg triplets per file
+    neg_per_file = np.floor(triplets_per_file*neg_ratio) #number of negative triplets to generate given(query + partial summary)
+    assert neg_per_file >= 1, "you have to increase your neg_ratio"
+    
+    nb_files = nb_triplets / triplets_per_file
+    selected_files_array = np.random.choice(article_names, size=nb_files, p=article_weights, replace = False)
+    
+    for full_name in selected_files_array :
+        with open(full_name) as f :
+            file_as_dict = json.load(f)
+        
+        counter = 0
+        while counter < triplets_per_file :
+            
+            # select a key for positive examples
+            key_pos = select_key(file_as_dict)
+            
+            triplet = build_triplet_lstm(lstm_model, file_as_dict, key_pos,stopwords,word_indices, positive = True, str_mode = str_mode, with_txt_vect=with_txt_vect)
+            label = 1
+            
+            triplets.append(triplet)
+            labels.append(label)
+            counter += 1 
+            
+            if neg_ratio < 1 : 
+                
+                if np.random.rand() < neg_ratio :
+                    
+                    triplet = build_triplet_lstm(lstm_model, file_as_dict, key_pos,stopwords,word_indices, positive = False, str_mode = str_mode, with_txt_vect=with_txt_vect)
+                    label = 0
+                    
+                    triplets.append(triplet)
+                    labels.append(label)
+                    counter += 1 
+
+            else :
+                
+                for n in range(int(np.floor(neg_ratio))):
+                    
+                    triplet = build_triplet_lstm(lstm_model, file_as_dict, key_pos,stopwords,word_indices, positive = False, str_mode = str_mode,with_txt_vect=with_txt_vect)
+                    label = 0
+                    
+                    triplets.append(triplet)
+                    labels.append(label)
+                    counter += 1 
+
+            
+    triplets = np.asarray(triplets)[:nb_triplets]
+    labels = np.asarray(labels)[:nb_triplets]
+    
+    return triplets, labels
+
+def build_triplet_lstm(lstm_model, file_as_dict, key_pos, stopwords,word_indices, positive = True, str_mode = False, remove_stop_words=True, with_txt_vect = False):
+    if remove_stop_words : 
+        stopwords = stop_words()
+    else :
+        stopwords = []
+        
+    if with_txt_vect :
+        text_str = ""
+        for key in file_as_dict.keys():
+            if key not in non_selected_keys :
+                text_str += file_as_dict[key]
+
+        text_vector = lstm_infer_vector(lstm_model,text_str,stopwords,word_indices)
+            
+    query_str = key_pos
+    query_vector = lstm_infer_vector(lstm_model,query_str,stopwords,word_indices)
+    
+    summary_str = file_as_dict[key_pos]
+    sentences = summary_str.split(".")
+    
+    partial_summary = []
+    candidates = []
+    
+    size_partial_summary = np.random.rand()
+    
+    for sentence in sentences: 
+        if np.random.rand() < size_partial_summary :
+            partial_summary.append(sentence)
+        else :
+            candidates.append(sentence)
+    
+    candidate = ""
+    counter_candidate = 0
+    while (candidate == "" or partial_summary == "") and counter_candidate < 10:
+        counter_candidate += 1
+        
+        if positive : 
+            if len(candidates) > 0:
+                random_candidate_index = np.random.randint(0,len(candidates))
+                candidate = candidates[random_candidate_index]
+            else :
+                random_candidate_index = np.random.randint(0,len(partial_summary))
+                candidate = partial_summary[random_candidate_index]
+                partial_summary[random_candidate_index] = ""
+
+
+            candidate_prep = gensim.utils.simple_preprocess(candidate, deacc=True)
+            candidate_vector = lstm_infer_vector(lstm_model,candidate,stopwords,word_indices)
+
+        else :
+
+            key_neg = select_key(file_as_dict)
+            counter = 0
+
+            while key_neg == key_pos and counter<10 : # the counter is for the preproduction code 
+                counter += 1
+                key_neg = select_key(file_as_dict)
+
+            summary_str = file_as_dict[key_neg]
+
+            sentences = summary_str.split('.')
+            random_candidate_index = np.random.randint(0,len(sentences))
+            candidate = sentences[random_candidate_index]
+            candidate_vector = lstm_infer_vector(lstm_model,candidate,stopwords,word_indices)
+        
+        partial_summary_str = "".join(partial_summary)
+        partial_summary_vector = lstm_infer_vector(lstm_model, partial_summary_str,stopwords,word_indices)
+    
+    if str_mode :
+        return query_str, partial_summary_str, candidate
+    elif with_txt_vect:
+        return np.hstack( [query_vector, partial_summary_vector, candidate_vector, text_vector])
+    else :
+        return np.hstack( [query_vector, partial_summary_vector, candidate_vector] )
+
+    
+
+def lstm_summarize(text, query, lstm_model,  nn_model, stopwords, word_indices, limit = 250, remove_stop_words = True,with_txt_vect=False):
+    """
+    Perform summarization on text given query,
+    """
+    if remove_stop_words : 
+        stopwords = stop_words()
+    else :
+        stopwords = []
+    
+    if with_txt_vect :
+        text_vector = lstm_infer_vector(lstm_model, text, stopwords,word_indices)
+        
+    query_vector = lstm_infer_vector(lstm_model, query, stopwords,word_indices)
+    
+    summary  = ""
+    summary_vector = np.zeros(400)
+    summary_idx = []
+    
+    sentences = text.split('.')
+    sentences = np.asarray(sentences)
+    
+    remaining_sentences = copy.copy(sentences)
+    
+    size = 0
+    counter = 0
+    while size < limit and len(remaining_sentences)>0 :
+        counter = counter+1
+        scores = []
+        for sentence in remaining_sentences :
+            sentence_vector = lstm_infer_vector(lstm_model, sentence, stopwords,word_indices)
+            if with_txt_vect :
+                nn_input = np.hstack([query_vector, summary_vector, sentence_vector, text_vector])
+            else:
+                nn_input = np.hstack([query_vector, summary_vector, sentence_vector])
+            nn_input = np.asarray([nn_input]) # weird but it is important to do it
+            score = nn_model.predict(nn_input) 
+            scores.append(score)
+        #print(scores)
+        max_idx_rem = int(np.argmax(scores))
+        idx_selected_sentence = np.arange(len(sentences))[sentences == remaining_sentences[max_idx_rem]]
+        idx_selected_sentence = int(idx_selected_sentence[0])
+        size += len(remaining_sentences[max_idx_rem].split())
+        
+        remaining_sentences = list(remaining_sentences)
+        del remaining_sentences[max_idx_rem]
+        bisect.insort_left(summary_idx,idx_selected_sentence)
+
+        summary  = ""
+
+        for idx in summary_idx:
+            summary = summary + " " + sentences[idx]
+
+        summary_vector = lstm_infer_vector(lstm_model, summary, stopwords,word_indices)
+
+    return summary

@@ -1,9 +1,20 @@
-# Quadruplets 
+# Changing d2v with lstm language model
+#from __future__ import print_function
 
-# training file , I remove the concept of validation loss
+from keras.models import Sequential
+from keras.layers.core import Dense, Activation, Dropout
+from keras.layers.recurrent import LSTM
+from keras.utils.data_utils import get_file
 
-# In this script we perform the training of the fully connected model
+import numpy as np
+import random
+import sys
+import os    
+os.environ['THEANO_FLAGS'] = "device=gpu, floatX=float32"
+import gensim
+from functions.words_chars import vocabulary_from_json_corpus
 
+json_corpus_path = "/home/ubuntu/summarization_query_oriented/data/wikipedia/json/td_qfs_rank_1/"
 # Import 
 import gensim
 import keras
@@ -18,7 +29,9 @@ from pyrouge import Rouge155
 
 from hard_coded import data_json_dir, data_txt_dir, lang_model_dir, model_dir, nn_summarizers_dir, summary_system_super_dir, tdqfs_folder
 from hard_coded import non_selected_keys,tdqfs_themes
+from functions.training_functions import create_triplets_lstm
 from functions.training_functions import *
+stopwords = stop_words()
 
 # paths to folder 
 data_json = data_json_dir
@@ -36,28 +49,43 @@ themes = tdqfs_themes
 
 patience_limit = 25
 
-## loading a d2vmodel (to be a shifted LSTM next ...)
+## loading a lstm (to be a shifted LSTM next ...)
 
-# parameters of doc2vec
-dm = 0
-min_count = 5
-window = 10
-size = 400
-sample = 1e-4
-negative = 5
-workers = 4
-epoch = 100
+# building vocabulary of the corpus
+words = vocabulary_from_json_corpus(json_corpus_path)
+word_indices = dict((c, i) for i, c in enumerate(words))
+indices_word = dict((i, c) for i, c in enumerate(words))
+print("word_indices", type(word_indices), "length:",len(word_indices))
+print("indices_words", type(indices_word), "length", len(indices_word))
 
-# Initialize the model ( IMPORTANT )
-d2v_model = gensim.models.doc2vec.Doc2Vec(dm=dm,min_count=min_count, window=window, size=size, sample=sample, negative=negative, workers=workers,iter = epoch)
+maxlen = 10
 
-# load model
-model_name ="dm_"+str(dm)+"_mc_"+str(min_count)+"_w_"+str(window)+"_size_"+str(size)+"_neg_"+str(negative)+"_ep_"+str(epoch)+"_wosw"
-try :
-    d2v_model = d2v_model.load(lang_model_folder+model_name+".d2v")
-except :
-    print "try a model in : ", os.listdir(lang_model_folder)
-print("model loaded")
+#defining the lstm model
+print('Build model...')
+model = Sequential()
+model.add(LSTM(400, return_sequences=True, input_shape=(maxlen, len(word_indices))))
+model.add(Dropout(0.6))
+model.add(LSTM(400, return_sequences=False))
+model.add(Dropout(0.6))
+model.add(Dense(len(words)))
+#model.add(Dense(1000))
+model.add(Activation('softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='adam')
+print('Model built...')
+
+# naming 
+model_folder = "/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_18112016/"
+model_name = "tdqfs_lstm_wider_corpus_last.hdf5"
+
+if os.path.isfile('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_18112016/tdqfs_lstm_wider_corpus_last.hdf5'):
+    model.load_weights('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_18112016/tdqfs_lstm_wider_corpus_last.hdf5')
+
+
+print('Build model...')
+model2 = Sequential()
+model2.add(LSTM(400, return_sequences=True, batch_input_shape=(1,maxlen, len(word_indices)),weights=model.layers[0].get_weights(),stateful=True))
+model2.add(LSTM(400, return_sequences=False,weights=model.layers[2].get_weights(),stateful=True))
+print('Model built...')
 
 ## get wikipedia data
 article_names, article_weights = relevant_articles(data_json)
@@ -81,25 +109,28 @@ fc_model.add(Activation('sigmoid'))
 fc_model.compile(loss="binary_crossentropy", optimizer='adam')
 
 # training per batch
-batch_per_epoch = 50
+batch_per_epoch = 1
 #batch_per_epoch = 20
-batch_size = 128
+batch_size = 32
 patience = 0
-batch_counter = 6000
+batch_counter = 8000
 rouge_su4_recall_max = 0
 rouge_2_recall_max = 0
 
 while patience < patience_limit :
     # train on several batchs
-    for i in range(batch_per_epoch):
-        triplets, labels = create_triplets(d2v_model, article_names, article_weights, nb_triplets=batch_size, triplets_per_file=16, neg_ratio=1, str_mode = False, with_txt_vect=True) # HERE IS THE NEW STUFF
-        fc_model.train_on_batch(triplets, labels)
     
+    for i in range(batch_per_epoch):
+        tic = time.time()
+        triplets, labels = create_triplets_lstm(model2, article_names, article_weights, stopwords, word_indices, nb_triplets=batch_size, triplets_per_file=16, neg_ratio=1, str_mode = False, with_txt_vect=True) # HERE IS THE NEW STUFF
+        fc_model.train_on_batch(triplets, labels)
+        toc = time.time()
+        print("batch  "+str(batch_per_epoch),toc-tic)
     batch_counter += 1
 
     # summarize DUC
     str_time = time.strftime("%Y_%m_%d")
-    fc_model_name = "T5"+str_time+"_fc_model_batch_"+str(batch_counter)+"k"
+    fc_model_name = "T6_2_"+str_time+"_fc_model_batch_"+str(batch_counter)+"k"
     system_folder = summary_system_super_folder+fc_model_name+"/"
     os.mkdir(system_folder)
 
@@ -110,7 +141,7 @@ while patience < patience_limit :
         text = merge_articles_tqdfs(theme_doc_folder)
         for i in range(len(queries)):
             query = queries[i]
-            summary = summarize(text,query,d2v_model, fc_model, limit = 250, with_txt_vect=True)
+            summary = lstm_summarize(text,query,model2, fc_model,stopwords, word_indices, limit = 250, with_txt_vect=True)
             summary = " ".join(summary.split()[:250])
 
             summary_name = theme + "." + str(i+1) + ".txt"

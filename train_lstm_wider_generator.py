@@ -6,6 +6,7 @@ from keras.layers.recurrent import LSTM
 from keras.utils.data_utils import get_file
 
 import numpy as np
+import pickle
 import random
 import sys
 import os    
@@ -49,25 +50,25 @@ model.add(Dropout(0.6))
 model.add(Dense(len(words)))
 #model.add(Dense(1000))
 model.add(Activation('softmax'))
-model.compile(loss='categorical_crossentropy', optimizer='sgd')
+model.compile(loss='categorical_crossentropy', optimizer='adam')
 print('Model built...')
 
 # naming 
 model_folder = "/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_30102016/"
-model_name = "tdqfs_lstm_wider_corpus_"
-model_name = model_name +"epoch_{epoch:02d}_valloss_{val_loss:.2f}.hdf5"
-example_name = "tdqfs_lstm_wider_corpus.examples"
+model_name = "tdqfs_lstm_wider_corpus_last.hdf5"
+#model_name = model_name +"epoch_{epoch:02d}_valloss_{val_loss:.2f}.hdf5"
+#example_name = "tdqfs_lstm_wider_corpus.examples"
 
 from keras.callbacks import ModelCheckpoint, EarlyStopping
 from functions.callbacks import LossHistory, ReduceLROnPlateau
 
 history = LossHistory()
-checkpointer = ModelCheckpoint(filepath=model_folder+model_name, verbose=1, save_best_only=True)
-earlystopper = EarlyStopping(monitor='val_loss', patience=5, verbose=1, mode='auto')
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,patience=3, min_lr=0.001)
+checkpointer = ModelCheckpoint(monitor='val_loss', filepath=model_folder+model_name, verbose=1, save_best_only=True, mode='auto')
+earlystopper = EarlyStopping(monitor='val_loss', patience=4, verbose=1, mode='auto')
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,patience=2, min_lr=0.001)
 
-if os.path.isfile('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/last_tdqfs_lstm_wider_corpus'):
-    model.load_weights('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/last_tdqfs_lstm_wider_corpus')
+if os.path.isfile('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_30102016/tdqfs_lstm_wider_corpus_last.hdf5'):
+    model.load_weights('/home/ubuntu/summarization_query_oriented/nn_models/language_models/RNN/wider_30102016/tdqfs_lstm_wider_corpus_last.hdf5')
 
 model.fit_generator(generator = train_generator, samples_per_epoch = batch_nb * batch_size, nb_epoch = 1000,
                     verbose=1, callbacks=[history, checkpointer, earlystopper, reduce_lr], 
