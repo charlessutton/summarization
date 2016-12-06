@@ -21,3 +21,17 @@ def vocabulary_from_json_corpus(json_corpus_path, chars_mode = False):
         return chars
     else:
         return words
+    
+def doc2bow(text, word_indices):
+    """
+    take a text as input and return a sparse bow vector as output
+    text is a sequence of unicode strings (typically output of gensim.utils.simple_preprocessing) 
+    this function ignores words that are not in the dictionary
+    """
+    res = np.zeros(len(word_indices))
+    for word in text :
+        try :
+            res[word_indices[word]] += 1 
+        except KeyError : #case where the word is not in the dictionnary
+            pass
+    return res
